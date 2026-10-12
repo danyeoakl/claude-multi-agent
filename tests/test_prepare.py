@@ -22,20 +22,33 @@ let {effectiveIsolation:Ye,isRemoteLaunch:he,shouldRunAsync:K}=isolation();
 let Qe=X?"inherit":qe,se=resolve(identity(s,pt),pt,Qe,Pe),xe=type(s);e.agentLifecycle.markTypeInvoked(s.agentType);
 return {agentDefinition:s,model:se};}'''
 EFFORT_SOURCE = b'''
+const effortOrder=["low","medium","high","xhigh","max"];
+function allowed(n,e){return !(cap&&n==="max");}
+function ladder(e){return effortOrder.filter((n)=>allowed(n,e))}
 function supports(e){if(disabled(e))return!1;let n=override(e,"effort");return n??e!=="haiku";}
 function max(e){if(disabled(e))return!1;let n=override(e,"max_effort");return n??e==="opus";}
 function xhigh(e){if(disabled(e))return!1;let n=override(e,"xhigh_effort");return n??e==="opus";}
 function effort(e,n,{turnEffort:r,hookEffortValue:s,carriedEffort:d=carry(e)}={}){
 if(!supports(e))return;return forced??(cap&&n==="max"?"high":n);}
 '''
+NATIVE_AGENT_SOURCE = AGENT_SOURCE[:-2] + b''',effort:enumFactory(levels).optional().describe("Reasoning effort for this agent. Native user-instruction rule.")};
+var relativeSchema={effort:enumFactory([...relativeLevels,...levels]).optional().describe('Reasoning effort for this agent. "lower" or "higher" is one step.')};'''
+NATIVE_AGENT_HANDLER = b'''import{effort}from"/effort.js";
+async function launch({agentInput:n,toolUseContext:e,canUseTool:p,assistantMessage:g,onProgress:h,enclosingToolUseId:R}){
+let {effort:ve}=n,pt=ve==="lower"||ve==="higher"?ve:void 0,Je=ve==="lower"||ve==="higher"?void 0:ve;
+let s={effort:"high"},X=n.fork??false,qe=n.model,wt="opus",Pe={};
+let {effectiveIsolation:Ye,isRemoteLaunch:he,shouldRunAsync:K}=isolation(n);
+let Qe=X?"inherit":qe,se=resolve(identity(s,wt),wt,Qe,Pe);if(!X&&Je!==void 0)s={...s,effort:Je};
+let Oe=he?void 0:plan({agentDefinition:s,isFork:X,model:se,effortState:e.getAppState(),inheritedLayers:e.permissionLayers,recordedBudgetText:void 0}),nt=pt!==void 0&&!X&&Oe?.subagentEffort!==void 0?shift(se,Oe.subagentEffort,pt==="higher"?1:-1):void 0,le=Oe!==void 0&&nt!==void 0?{...Oe,agentDefinition:{...Oe.agentDefinition,effort:nt},subagentEffort:nt}:Oe,It=X?void 0:nt??Je;s=le?.agentDefinition??s;let We=type(s);e.agentLifecycle.markTypeInvoked(s.agentType);
+return {agentDefinition:s,model:se,wireEffort:It,persistedEffort:It,subagentEffort:le?.subagentEffort,background:K};}'''
 
 
-def fixture(source=SOURCE):
+def fixture(source=SOURCE, agent_source=AGENT_SOURCE + AGENT_HANDLER):
     """Small actual ELF/Bun layout with independent per-module caches."""
     blob = bytearray()
     records = []
     for name, content in ((b'/gate.js', source), (b'/untouched.js', b'other();'),
-                          (b'/agent.js', AGENT_SOURCE + AGENT_HANDLER), (b'/effort.js', EFFORT_SOURCE)):
+                          (b'/agent.js', agent_source), (b'/effort.js', EFFORT_SOURCE)):
         fields = []
         for data in (name, content, b'sourcemap', b'bytecode', b'moduleInfo', b'origin'):
             fields.extend((len(blob), len(data)))
@@ -69,7 +82,8 @@ class PatchTests(unittest.TestCase):
           process.env.CLAUDE_HYBRID_SUBAGENT_PATCH=ENABLED;
           process.env.ANTHROPIC_BASE_URL=HOST;
         '''.replace('ENABLED', json.dumps('1' if enabled else '0')).replace('HOST', json.dumps(host))
-        subprocess.run(['node', '-e', setup + preamble + source.decode() + checks], check=True, capture_output=True)
+        result = subprocess.run(['node', '-e', setup + preamble + source.decode() + checks], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_wire_diagnostic_does_not_log_request_secrets_or_change_transport(self):
         self.run_effort('''
@@ -94,9 +108,10 @@ class PatchTests(unittest.TestCase):
           for(const model of models){
             for(const value of [undefined,null,'default'])assert.equal(apply(original,value,model,false),original);
             for(const value of ['low','medium','high','xhigh','max']){
-              if(cmaEffortCatalog[model].includes(value)){
+              const mapped=model.includes('/deepseek/')?({medium:'high',xhigh:'max'})[value]??value:value;
+              if(cmaEffortCatalog[model].includes(mapped)){
                 const result=apply(original,value,model,false);
-                assert.notEqual(result,original);assert.equal(result.effort,value);
+                assert.notEqual(result,original);assert.equal(result.effort,mapped);
               }else assert.throws(()=>apply(original,value,model,false),/invalid/);
             }
           }
@@ -140,6 +155,98 @@ class PatchTests(unittest.TestCase):
                     AGENT_HANDLER + AGENT_HANDLER):
             with self.assertRaises(ValueError):
                 prepare.patch_agent_launch_source(bad, '/effort.js')
+
+    def test_native_effort_schema_extended_without_duplicate_fields(self):
+        source, _ = prepare.patch_agent_source(NATIVE_AGENT_SOURCE)
+        self.assertEqual(source.count(b'effort:'), 2)
+        script = '''const assert=require('node:assert/strict');
+          const levels=['low','medium','high','xhigh','max'],relativeLevels=['lower','higher'];
+          const enumFactory=values=>({values,nullable(){this.allowNull=true;return this},optional(){return this},describe(){return this}});
+          process.env.ANTHROPIC_BASE_URL=HOST;process.env.CLAUDE_HYBRID_SUBAGENT_PATCH=ENABLED;
+          SOURCE
+          assert.deepEqual(schema.effort.values,[...levels,...(ENABLED==='1'?["default"]:[])]);
+          assert.deepEqual(relativeSchema.effort.values,[...relativeLevels,...levels,...(ENABLED==='1'?["default"]:[])]);
+          assert.equal(schema.effort.allowNull,ENABLED==='1'?true:undefined);
+        '''.replace('SOURCE', source.decode()).replace('HOST', json.dumps(prepare.GATEWAY))
+        for enabled in ('0', '1'):
+            subprocess.run(['node', '-e', script.replace('ENABLED', json.dumps(enabled))], check=True, capture_output=True)
+        with self.assertRaisesRegex(ValueError, 'schemas changed'):
+            prepare.patch_agent_source(NATIVE_AGENT_SOURCE.split(b'var relativeSchema')[0])
+
+    def test_native_transport_persists_mapped_effort_for_foreground_and_background(self):
+        source, _ = prepare.patch_agent_launch_source(NATIVE_AGENT_HANDLER, '/effort.js')
+        handler = source.replace(b'import{effort}from"/effort.js";', b'').decode()
+        self.run_effort(handler + r'''
+          const isolation=n=>({isRemoteLaunch:n.remote??false,shouldRunAsync:n.background??false});
+          const identity=s=>s,resolve=(s,parent,model)=>model??parent,type=()=>"general-purpose";
+          const plan=({agentDefinition:s,model})=>({agentDefinition:s,subagentEffort:effort(model,s.effort)});
+          const shift=(model,current,direction)=>{
+            const levels=ladder(model).filter(x=>x!=='max');
+            const rank=['low','medium','high','xhigh','max'];
+            return direction===1?levels.find(x=>rank.indexOf(x)>rank.indexOf(current)):
+              levels.findLast(x=>rank.indexOf(x)<rank.indexOf(current));
+          };
+          const context={getAppState:()=>({}),permissionLayers:[],agentLifecycle:{markTypeInvoked(){}}};
+          const run=n=>launch({agentInput:n,toolUseContext:context});
+          (async()=>{
+            for(const background of [false,true])for(const model of Object.keys(cmaEffortCatalog)){
+              for(const value of ['low','medium','high','xhigh','max']){
+                if(model.includes('/xiaomi/')){await assert.rejects(run({model,effort:value,background}),/invalid/);continue;}
+                const mapped=model.includes('/deepseek/')?({medium:'high',xhigh:'max'})[value]??value:value;
+                const result=await run({model,effort:value,background});
+                assert.equal(result.agentDefinition.effort,mapped);assert.equal(result.wireEffort,mapped);
+                assert.equal(result.persistedEffort,mapped);assert.equal(result.subagentEffort,mapped);
+                assert.equal(result.background,background);
+              }
+            }
+            const model='claude/chatgpt/gpt-6.1-sol';
+            for(const value of [undefined,null,'default']){
+              const result=await run({model,effort:value});
+              assert.equal(result.agentDefinition.effort,'high');assert.equal(result.wireEffort,undefined);
+            }
+            assert.equal((await run({model,effort:'low',fork:true})).wireEffort,undefined);
+            await assert.rejects(run({model,effort:'low',remote:true}),/fork\/remote/);
+            await assert.rejects(run({model,effort:'high',name:'teammate'}),/teammates/);
+            await assert.rejects(run({model:'claude/xiaomi/mimo-v2.6-pro',effort:'higher'}),/graded effort/);
+            const deep='claude/deepseek/deepseek-flash';
+            assert.equal((await run({model:deep,effort:'lower'})).wireEffort,'low');
+            assert.equal((await run({model:deep,effort:'higher'})).wireEffort,undefined);
+            forced='high';await assert.rejects(run({model,effort:'low'}),/overridden/);forced=undefined;
+            cap=true;await assert.rejects(run({model:deep,effort:'xhigh'}),/overridden/);cap=false;
+            // Native Claude's newer transport keeps its own downgrade/override rules.
+            forced='high';const native=await run({model:'opus',effort:'low'});
+            assert.equal(native.wireEffort,'low');assert.equal(native.subagentEffort,'high');
+          })().catch(error=>{console.error(error);process.exitCode=1});
+        ''')
+
+    def test_native_effort_handoff_drift_is_rejected(self):
+        for bad in (NATIVE_AGENT_HANDLER.replace(b'agentDefinition:s,isFork:', b'changed:s,isFork:'),
+                    NATIVE_AGENT_HANDLER.replace(b'.markTypeInvoked', b'.changed'),
+                    NATIVE_AGENT_HANDLER.replace(b'enclosingToolUseId:', b'unknownParameter:'),
+                    NATIVE_AGENT_HANDLER.replace(b'isRemoteLaunch:', b'remote:'),
+                    NATIVE_AGENT_HANDLER.replace(b'if(!X&&Je!==void 0)', b'if(!X&&Je!=null)'),
+                    NATIVE_AGENT_HANDLER + NATIVE_AGENT_HANDLER):
+            with self.assertRaises(ValueError):
+                prepare.patch_agent_launch_source(bad, '/effort.js')
+
+    def test_model_ladder_retains_policy_filter_and_native_levels(self):
+        self.run_effort('''
+          const deep='claude/deepseek/deepseek-flash';
+          assert.deepEqual(ladder(deep),['low','high','max']);
+          assert.deepEqual(ladder('claude/xiaomi/mimo-v2.6-pro'),[]);
+          assert.deepEqual(ladder('opus'),effortOrder);
+          cap=true;assert.deepEqual(ladder(deep),['low','high']);
+          assert.deepEqual(ladder('opus'),['low','medium','high','xhigh']);
+        ''')
+
+    def test_native_schema_and_transport_in_real_binary_fixture(self):
+        original, _ = fixture(agent_source=NATIVE_AGENT_SOURCE + NATIVE_AGENT_HANDLER)
+        output, details = prepare.patch_binary(original)
+        self.assertEqual(details['patches']['subagent_models']['module'], '/agent.js')
+        self.assertIn(b'agentDefinition:s,isFork:X,model:se,effortState:e.getAppState()', output)
+        self.assertIn(b'globalThis.__cmaHybridEffort.known(se)', output)
+        with self.assertRaises(ValueError):
+            prepare.patch_binary(output)
 
     def test_unknown_effort_layout_fails_closed(self):
         for bad in (EFFORT_SOURCE.replace(b'"max_effort"', b'"new"'),

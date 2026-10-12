@@ -67,10 +67,53 @@ run cma prepare-client and relaunch. Source/patch/origin/catalog checksums drive
 automatic rebuilds; unknown layouts fail closed. Never edit the original binary.
 
 `CMA_NO_PATCH=1 cma-claude` retains the native client/picker but lacks custom
-Agent models/effort. Use direct Codex until the patch is reviewed. RC's host-gate
+Agent models and gateway effort adaptations (new clients still have their native
+effort argument). Use direct Codex until the patch is reviewed. RC's host-gate
 workaround is separate and off by default: `CMA_REMOTE_CONTROL_PATCH=1
 cma-claude --rc`. Other OAuth/org/subscription eligibility checks still apply.
 This unsupported interface can break; close test RC sessions afterward.
+
+### Native Agent effort (Claude Code 2.1.296)
+
+The native per-invocation effort field arrived in 2.1.292. Our newer patch
+extends the existing absolute/relative schemas and uses native transport and
+resume persistence; the 2.1.289 branch remains for rollback. Sol/Astra retain
+low/medium/high/xhigh/max; DeepSeek medium→high and xhigh→max are explicit
+aliases for its three real levels, not new provider capabilities. MiMo permits
+omitted/null/default, not a graded override. Native Claude keeps its own effort
+resolution. Gateway policy/environment conflicts still fail explicitly.
+
+Feature-gated lower/higher remains controlled by the native client and is not
+force-enabled. Its native stepping excludes max. Forks on the new client inherit
+the parent's model/effort, ignoring overrides. Restart/resume in a fresh enhanced
+process after preparing the client; existing sessions retain their old schema.
+
+An opt-in test executes the real installed native client against a fake loopback
+API: all four Codex routes at five efforts, DeepSeek mappings and MiMo default.
+It also enables native relative effort only in the isolated test, verifying
+lower/higher on all five graded routes (36 Agent launches in total).
+It uses dummy authentication and isolated temporary config, never real provider
+inference/credentials, and leaves the installed binary unchanged:
+
+```bash
+python3 tests/test_native_client.py --allow-client --source "$(command -v claude)"
+```
+
+If preparation fails, check `type -a claude` and each absolute executable's
+`--version`. Duplicate npm installs under Homebrew/NVM can make terminal and
+agent PATHs choose different versions. Keep one normal installation; preserve
+account/session/config directories and active cached clients. A version change
+triggers automatic rebuilding, not automatic rejection: changed/unrecognized
+code or binary layouts trigger the fail-closed guard.
+Before an npm upgrade, check `npm prefix -g` against the chosen Claude executable:
+an npm from a different Node installation can recreate the duplicate. Use an
+explicit `--prefix` for the intended installation when necessary; do not remove
+unrelated Node/npm tools or account directories.
+
+Verified 2026-10-12 on the actual native 2.1.296 executable: the opt-in fake-API
+test passed, as did 34 offline host checks and 15 pinned LiteLLM bridge checks.
+Background/persisted effort is covered by fixtures; real-provider inference,
+Remote Control and native resume were not newly live-tested for this upgrade.
 
 No launcher creates namespaces/no-new-privileges flags. SSH inherits the
 terminal's SSH_AUTH_SOCK. Missing agent keys cause ordinary auth failures.

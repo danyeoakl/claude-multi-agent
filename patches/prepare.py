@@ -32,6 +32,11 @@ AGENT_MODEL = re.compile(
     rb'model:(' + IDENT + rb')\((\["sonnet","opus","haiku","fable"\])\)'
     rb'(?=\.optional\(\)\.describe\(`Optional model override for this agent\.)'
 )
+NATIVE_AGENT_EFFORT = re.compile(
+    rb'effort:(' + IDENT + rb')\((' + IDENT + rb'|\[\.\.\.' + IDENT +
+    rb',\.\.\.' + IDENT + rb'\])\)\.optional\(\)\.describe\('
+    rb'(?=["\']Reasoning effort for this agent\.)'
+)
 # Intentionally explicit: these are the six reviewed ClaudeHybrid agent routes.
 # Keep aligned with litellm/claude-hybrid.json when changing this key's models.
 SUBAGENT_MODELS = (
@@ -54,6 +59,10 @@ EFFORT_RESOLVER = re.compile(
     rb',\{turnEffort:'+ IDENT + rb',hookEffortValue:'+ IDENT +
     rb',carriedEffort:'+ IDENT + rb'='+ IDENT + rb'\(\2\)\}=\{\}\)\{'
 )
+EFFORT_LADDER = re.compile(
+    rb'function (' + IDENT + rb')\((' + IDENT + rb')\)\{return (' + IDENT +
+    rb')\.filter\(\((' + IDENT + rb')\)=>(' + IDENT + rb')\(\4,\2\)\)\}'
+)
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 MODEL_EFFORTS = {model: (('low', 'high', 'max') if '/deepseek/' in model else
                        () if '/xiaomi/' in model else EFFORTS)
@@ -62,12 +71,15 @@ EFFORT_DESCRIPTION = (
     'Per-launch reasoning effort. Omit, null or "default" preserves normal '
     'agent/session defaults (not a forced provider reset). Sol 6.1 and Astra, '
     'including backup: low/medium/high/xhigh/max. DeepSeek Flash: low/high/max '
-    '(its medium and xhigh are aliases, not distinct levels). MiMo: default/null '
+    '(medium maps to high; xhigh maps to max, not distinct levels). MiMo: default/null '
     'only; graded effort is not supported. Native Claude uses installed client '
     'capabilities: current Opus/Sonnet/Fable support all five; Haiku 4.5 default '
     'only. Invalid or policy/environment-overridden choices are rejected, not '
     'silently downgraded. Explicit effort is for foreground/background standalone '
-    'agents, not forks, remote/cloud agents or named teammates.'
+    'agents, not forks, remote/cloud agents or named teammates. If the native '
+    'client offers lower/higher, retain its relative-step behavior; max still '
+    'requires an explicit request. Follow the native tool guidance about when '
+    'to specify effort.'
 )
 
 
@@ -109,6 +121,25 @@ def patch_effort_source(source):
         addition = ('{const levels=cmaEffortLevels(' + param + ');'
                     'if(levels!==undefined)return ' + value + ';}').encode()
         source = source[:pos] + addition + source[pos:]
+    ladders = list(EFFORT_LADDER.finditer(source))
+    require(len(ladders) <= 1, 'Effort level ladder is ambiguous')
+    if ladders:
+        ladder = ladders[0]
+        param, enum, item, policy = (ladder[i].decode() for i in range(2, 6))
+        pos = source.index(b'{', ladder.start()) + 1
+        addition = ('{const levels=cmaEffortLevels(' + param + ');'
+                    'if(levels!==undefined)return ' + enum + '.filter((' + item +
+                    ')=>levels.includes(' + item + ')&&' + policy + '(' + item + ',' +
+                    param + '));}').encode()
+        source = source[:pos] + addition + source[pos:]
+    # A client with native relative effort must retain its policy-filtered
+    # ladder. Only narrow technical levels for known gateway models; never
+    # replace native stepping or remove managed-policy filtering.
+    relative = re.search(rb'function ' + IDENT + rb'\(' + IDENT + rb',' + IDENT +
+                         rb',' + IDENT + rb'\)\{let ' + IDENT + rb'=' + IDENT +
+                         rb'\(' + IDENT + rb'\)\.filter\(\(' + IDENT +
+                         rb'\)=>'+ IDENT + rb'!=="max"&&', source)
+    require(not relative or ladders, 'Native relative effort ladder changed')
     helper = r'''
 function cmaEffortEnabled(){return ENABLED;}
 const cmaEffortCatalog=CATALOG;
@@ -120,10 +151,28 @@ function cmaCheckAgentKind(input){
   if(cmaEffortEnabled()&&cmaExplicitEffort(input.effort)&&input.name)
     throw new Error("ClaudeHybrid: explicit effort is not supported for named teammates; omit it or use a standalone agent.");
 }
+function cmaNormalizeAgentInput(input){
+  cmaCheckAgentKind(input);
+  return cmaEffortEnabled()&&(input.effort===null||input.effort==="default")?
+    {...input,effort:undefined}:input;
+}
+function cmaCheckRelativeEffort(value,model,unsupported){
+  if(!cmaEffortEnabled()||(value!=="lower"&&value!=="higher"))return;
+  const levels=cmaEffortLevels(model);
+  if(levels===undefined)return;
+  if(unsupported)throw new Error("ClaudeHybrid: relative effort is not supported for fork/remote agents.");
+  if(!levels.length)
+    throw new Error("ClaudeHybrid: "+model+" does not support graded effort; omit it or use default/null.");
+}
 function cmaApplyAgentEffort(definition,value,model,unsupported){
   if(!cmaEffortEnabled()||!cmaExplicitEffort(value))return definition;
   if(unsupported)throw new Error("ClaudeHybrid: explicit effort is not supported for fork/remote agents; omit it to inherit normally.");
-  const levels=cmaEffortLevels(model)??(SUPPORTS(model)?[
+  const declared=cmaEffortLevels(model);
+  // Claude's universal enum has five levels; DeepSeek has three. Normalize
+  // before native capability/policy resolution, and persist the mapped value.
+  if(declared?.length===3&&declared.join(",")==="low,high,max")
+    value=({medium:"high",xhigh:"max"})[value]??value;
+  const levels=declared??(SUPPORTS(model)?[
     "low","medium","high",...(XHIGH(model)?["xhigh"]:[]),...(MAX(model)?["max"]:[])]:[]);
   if(!levels.includes(value))throw new Error("ClaudeHybrid: effort "+JSON.stringify(value)+" is invalid for "+model+". Supported: default/null"+(levels.length?", "+levels.join(", "):"")+".");
   const effective=RESOLVER(model,value,{carriedEffort:null});
@@ -134,7 +183,9 @@ function cmaApplyAgentEffort(definition,value,model,unsupported){
 // Agent module already imports this module, so publish a private runtime bridge
 // without changing any existing export positions or cached importers.
 Object.defineProperty(globalThis,"__cmaHybridEffort",{value:Object.freeze({
-  checkKind:cmaCheckAgentKind,apply:cmaApplyAgentEffort
+  checkKind:cmaCheckAgentKind,input:cmaNormalizeAgentInput,
+  relative:cmaCheckRelativeEffort,apply:cmaApplyAgentEffort,
+  known:model=>cmaEffortLevels(model)!==undefined
 })});
 // Optional wire diagnostic: only these three metadata fields, never headers,
 // credentials, prompts, tools or response content. Off in normal operation.
@@ -192,20 +243,75 @@ def patch_agent_source(source):
     catalog = (b'...(process.env.CLAUDE_HYBRID_SUBAGENT_PATCH==="1"&&'
                b'process.env.ANTHROPIC_BASE_URL===' + json.dumps(GATEWAY).encode() +
                b'?' + json.dumps(SUBAGENT_MODELS, separators=(',', ':')).encode() + b':[])')
-    effort = ('...(' + HYBRID_ENABLED + '?{effort:' + match[1].decode() + '(' +
+    native_effort = list(NATIVE_AGENT_EFFORT.finditer(source))
+    # 2.1.292+ owns effort transport/persistence. Extend its existing fields,
+    # never add a duplicate effort key that native schema construction shadows.
+    if native_effort:
+        require(len(native_effort) == 2 and
+                sum(m[2].startswith(b'[') for m in native_effort) == 1,
+                'Native Agent effort schemas changed')
+    effort = b'' if native_effort else ('...(' + HYBRID_ENABLED + '?{effort:' + match[1].decode() + '(' +
               json.dumps(('default', *EFFORTS)) + ').nullable().optional().describe(' +
               json.dumps(EFFORT_DESCRIPTION) + ')}:{}),').encode()
     replacement = effort + b'model:' + match[1] + b'(' + match[2][:-1] + b',' + catalog + b'])'
-    return source[:match.start()] + replacement + source[match.end():], 'Agent.model'
+    source = source[:match.start()] + replacement + source[match.end():]
+    for native in reversed(list(NATIVE_AGENT_EFFORT.finditer(source))):
+        factory, levels = native[1].decode(), native[2].decode()
+        added = ('effort:(' + HYBRID_ENABLED + '?' + factory + '([...' + levels +
+                 ',"default"]).nullable():' + factory + '(' + levels + '))'
+                 '.optional().describe((' + HYBRID_ENABLED + '?' +
+                 json.dumps(EFFORT_DESCRIPTION + ' ') + ':"")+').encode()
+        source = source[:native.start()] + added + source[native.end():]
+    return source, 'Agent.model/native effort schema'
 
 
 def patch_agent_launch_source(source, effort_module):
     handler = re.compile(rb'async function '+ IDENT + rb'\(\{agentInput:('+ IDENT +
                          rb'),toolUseContext:('+ IDENT + rb'),canUseTool:'+ IDENT +
-                         rb',assistantMessage:'+ IDENT + rb',onProgress:'+ IDENT + rb'\}\)\{')
+                         rb',assistantMessage:'+ IDENT + rb',onProgress:'+ IDENT +
+                         rb'(?:,enclosingToolUseId:'+ IDENT + rb')?\}\)\{')
     starts = list(handler.finditer(source))
     require(len(starts) == 1, 'Agent launch handler changed')
     start = starts[0]
+    native = re.compile(
+        rb'let (' + IDENT + rb')=(' + IDENT + rb')\?"inherit":' + IDENT +
+        rb',(' + IDENT + rb')=' + IDENT + rb'\(' + IDENT + rb'\((' + IDENT +
+        rb'),' + IDENT + rb'\),' + IDENT + rb',\1,' + IDENT + rb'\);'
+        rb'if\(!\2&&(' + IDENT + rb')!==void 0\)\4=\{\.\.\.\4,effort:\5\};'
+    )
+    natives = list(native.finditer(source, start.end()))
+    if natives:
+        require(len(natives) == 1, 'Native Agent effort handoff is ambiguous')
+        end = natives[0]
+        alias, fork, model, definition, absolute = (end[i] for i in range(1, 6))
+        context, input_name = start[2], start[1]
+        remote = re.findall(rb'\{effectiveIsolation:' + IDENT + rb',isRemoteLaunch:(' + IDENT +
+                            rb'),shouldRunAsync:' + IDENT + rb'\}=', source[start.end():end.start()])
+        require(remote and len(set(remote)) == 1, 'Agent remote launch guard changed')
+        # Verify native budget/permission-layer resolution and final definition
+        # handoff still follow this site before touching it.
+        budget = (b'({agentDefinition:' + definition + b',isFork:' + fork + b',model:' + model +
+                  b',effortState:' + context + b'.getAppState(),inheritedLayers:' + context +
+                  b'.permissionLayers,recordedBudgetText:void 0})')
+        require(budget in source[end.end():end.end() + 1200], 'Native Agent effort budget handoff changed')
+        lifecycle = context + b'.agentLifecycle.markTypeInvoked(' + definition + b'.agentType);'
+        require(source.count(lifecycle) == 1 and lifecycle in source[end.end():end.end() + 1600],
+                'Native Agent final definition handoff changed')
+        insertion = (b'if(' + HYBRID_ENABLED.encode() + b'){' +
+                     b'globalThis.__cmaHybridEffort.relative(' + input_name + b'.effort,' +
+                     model + b',' + fork + b'||' + remote[0] + b');'
+                     b'if(' + absolute + b'!==void 0&&globalThis.__cmaHybridEffort.known(' + model + b')){' + definition +
+                     b'=globalThis.__cmaHybridEffort.apply(' + definition + b',' + absolute +
+                     b',' + model + b',' + fork + b'||' + remote[0] + b');' +
+                     absolute + b'=' + definition + b'.effort;}}')
+        pos = source.index(b';', end.start()) + 1
+        source = source[:pos] + insertion + source[pos:]
+        pos = start.end()
+        source = source[:pos] + input_name + b'=globalThis.__cmaHybridEffort.input(' + input_name + b');' + source[pos:]
+        require(re.search(rb'import\{[^}]+\}from' + re.escape(json.dumps(effort_module).encode()), source),
+                'Agent no longer imports the effort module')
+        return source, 'Agent.effort native transport/model validation'
+    require(b'enclosingToolUseId:' not in start[0], 'Native Agent effort handoff changed')
     # Bind to the final resolved model, AFTER hooks/policy/model overrides.
     final = re.compile(
         rb'let ('+ IDENT + rb')=('+ IDENT + rb')\?"inherit":'+ IDENT +
@@ -224,7 +330,7 @@ def patch_agent_launch_source(source, effort_module):
     pos = source.index(b';', end.start()) + 1
     source = source[:pos] + insertion + source[pos:]
     pos = start.end()
-    source = source[:pos] + b'globalThis.__cmaHybridEffort.checkKind(' + start[1] + b');' + source[pos:]
+    source = source[:pos] + start[1] + b'=globalThis.__cmaHybridEffort.input(' + start[1] + b');' + source[pos:]
     require(re.search(rb'import\{[^}]+\}from' + re.escape(json.dumps(effort_module).encode()), source),
             'Agent no longer imports the effort module')
     return source, 'Agent.effort launch override'
@@ -407,6 +513,7 @@ def main():
         print(prepare(Path(args.source), args.cache))
     except (ValueError, OSError, KeyError, struct.error, subprocess.SubprocessError) as exc:
         sys.exit(f'ClaudeHybrid client preparation failed: {exc}\n'
+                 f'Client source: {args.source or "not found on PATH"}\n'
                  'No installed client was changed. To launch without this workaround, set '
                  'CLAUDE_HYBRID_CLIENT_PATCH=0.')
 

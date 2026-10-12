@@ -142,7 +142,8 @@ stay built in, while the gateway lists only these configured extras:
 | `claude/deepseek/deepseek-flash` | Optional official API |
 | `claude/xiaomi/mimo-v2.6-pro` | Optional OpenRouter API |
 
-Sol/Astra allow low/medium/high/xhigh/max; DeepSeek low/high/max; MiMo default
+Sol/Astra allow low/medium/high/xhigh/max; DeepSeek low/high/max (the client maps
+medium→high and xhigh→max); MiMo default
 only. No forced gateway effort. See the [model guide](skills/agent-orchestration/references/models.md).
 Codex advertises 272k input/128k output, though unfamiliar IDs can still use
 Claude's conservative internal context budget.

@@ -10,17 +10,30 @@ DeepSeek/MiMo appear only when their corresponding provider keys are configured.
 | `claude/chatgpt/gpt-6.1-sol-backup` | Same, second Codex subscription | high/xhigh | same |
 | `claude/chatgpt/gpt-6-astra` | Difficult design, independent insight | medium/high | low, medium, high, xhigh, max |
 | `claude/chatgpt/gpt-6-astra-backup` | Same, second Codex subscription | medium/high | same |
-| `claude/deepseek/deepseek-flash` | Mechanical refactors, digests, simple scripts | high; max for larger sweeps | low, high, max |
+| `claude/deepseek/deepseek-flash` | Mechanical refactors, digests, simple scripts | high; max for larger sweeps | low, high, max; medium→high, xhigh→max |
 | `claude/xiaomi/mimo-v2.6-pro` | Optional fallback through OpenRouter | default | omit, null, default only |
 | Native `opus`, `sonnet`, `haiku`, `fable` | Account-supported Claude work | default | installed client validates capabilities |
 
-DeepSeek's medium/xhigh map upstream to high and are not advertised as distinct
-levels. Native Claude capabilities change with the client/model/account; do not
+The client maps DeepSeek's medium→high and xhigh→max before native effort
+resolution; the gateway advertises only the three actual provider levels.
+Native Claude capabilities change with the client/model/account; do not
 invent them or force unsupported effort. Omitted/null/default retains existing
 agent/session defaults; it does not force an upstream reset. Explicit effort is
-supported on standalone foreground/background agents, not forks, named teammates
-or remote/cloud agent launches. Settings/policy/forced-environment conflicts fail
-explicitly instead of silently downgrading effort.
+supported on standalone foreground/background agents. Native 2.1.296 forks
+ignore per-launch model/effort and inherit the parent; the older transport rejects
+explicit fork effort. Named teammates and gateway remote/cloud agent launches
+do not support this override. Gateway settings/policy/forced-environment conflicts
+fail explicitly instead of silently downgrading effort; native Claude keeps its
+own resolution behavior.
+
+Claude Code 2.1.292+ has native per-invocation Agent effort. The patch extends
+that existing schema and retains native launch/background/resume persistence,
+instead of adding a duplicate effort field or a second transport. Omit an
+absolute effort unless the user or applicable instructions requested it, as
+the native tool description requires. If the client offers feature-gated
+lower/higher, retain its relative-step semantics; it excludes max, which must
+be requested explicitly. Do not force-enable that feature or invent a graded
+MiMo effort scale. Null/default preserves inheritance, not a provider reset.
 
 Native Claude Max OAuth stays on the client. Each Codex subscription has its own
 Docker worker and OAuth volume. `-backup` means explicit account selection, not
