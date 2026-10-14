@@ -34,6 +34,7 @@ For local development: `claude plugin validate /path/to/repo`, then
 - `/hybrid-agents:litellm-setup`
 - `/hybrid-agents:codex-fallback`
 - `/hybrid-agents:multi-account`
+- `/hybrid-agents:external-agents` - restart-safe interactive Grok/Gemini CLI supervision, steering and independent verification
 
 Skills can bundle scripts; ordinary skill loading is on demand. This plugin's
 SessionStart hook injects the orchestration core on startup/resume/clear/compact;
@@ -199,6 +200,17 @@ No account launcher uses Bubblewrap. Second Claude credentials are separate
 while sessions/settings are shared. Second native Codex uses separate CODEX_HOME,
 including separate config/history. Defaults are not rewritten globally.
 
+## External CLI workers
+
+The [external-agents skill](skills/external-agents/SKILL.md) bundles a stdlib tmux
+supervisor for interactive `grok` and Antigravity `agy` workers. A low-cost driver
+steers an authorized task and checks its results; detached workers survive a
+coordinator restart. Requires Linux, Python 3.10+, tmux and owner-authenticated
+CLIs. Run state is private; approval bypass is opt-in with `--auto-approve`.
+Executable paths/run root are environment-configurable, and preambles are explicit
+file arguments. See the [architecture, lessons and scorecard guide](skills/external-agents/references/guide.md).
+Fake-CLI tests do not establish live provider access or current vendor compatibility.
+
 ## Development and verification
 
 ```bash
@@ -208,6 +220,10 @@ claude plugin validate .
 python3 tests/integration.py --allow-docker
 python3 tests/install_check.py --allow-native
 ```
+
+The external-agent unit tests require tmux for their fake-CLI integration cases
+(and skip those cases if it is absent). They use private temporary socket/state
+namespaces and stop only their own workers; no provider login or inference runs.
 
 The opt-in Docker test creates its own random project/port, uses fake upstreams
 and removes only its own containers/volumes. No live credentials are used.

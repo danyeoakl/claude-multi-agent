@@ -161,6 +161,27 @@ Append a RESUME NOTE and relaunch only once the old run is gone. This restores
 worktree/checkpoint state, not native conversation context. Use codex exec resume
 explicitly for that. Claude-harness agents use their harness stop/resume tools.
 
+## External interactive workers
+
+Load the external-agents skill for Grok/Antigravity control. Its bundled
+`skills/external-agents/scripts/ext-agent.py` needs Linux, Python 3.10+, tmux and
+already authenticated CLIs. `EXT_AGENT_RUNS` selects private state (default
+`~/.cache/ext-agent`); `EXT_AGENT_GROK` / `EXT_AGENT_AGY` override executable paths.
+Preamble/brief are explicit files. Default launches retain CLI approval behavior;
+`--auto-approve` requires explicit authorization for that execution mode.
+
+Use foreground bounded `wait` calls with progress returns to keep the driver
+reachable without coordinator notification churn. Adopt existing runs after a
+restart with list/status/transcript, never a duplicate start. Idle and the
+first-idle `final.md` snapshot are not completion proof: verify deliverables and
+rerun authorized gates. Stop workers through the bundled script; detached remote
+jobs need their own authorized cleanup. Prune archives stopped runs but does not
+delete their private evidence. Never commit transcripts, prompts or UI banners.
+
+The [guide](skills/external-agents/references/guide.md) separates fake-CLI test
+coverage from untested live provider behavior and gives the scorecard rubric.
+No live provider calls or account changes are required for the unit suite.
+
 ## Gateway upgrades and backups
 
 Review the candidate release and run its offline bridge tests:
