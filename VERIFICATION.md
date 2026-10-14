@@ -1,5 +1,20 @@
 # Verification record
 
+## Client compatibility update — 2026-10-15
+
+Claude Code 2.1.299 adds a `timing` argument to the Agent launch handler. Both
+reviewed native handler signatures remain supported; unknown layouts still
+fail closed. Verified 35 offline host checks (one additional opt-in test skipped
+in discovery), 15 pinned LiteLLM bridge checks and plugin validation (existing
+root CLAUDE.md warning). The opt-in real native-client test separately passed:
+36 Agent launches against a fake loopback API checked all custom model routes,
+absolute/relative effort and the actual tool schema. No real credentials or
+quota were used; the installed binary was unchanged. Background/persisted effort
+is covered by fixtures, not a new live resume test. Live Remote Control and
+provider inference were not retested. Gateway deployment/config was unchanged.
+
+## Original deployment baseline
+
 Recorded 2026-10-05. Reviewed baseline: Claude Code 2.1.289, LiteLLM 1.104.0,
 Python 3.10+ interface, Docker Compose. Tests use temporary state, synthetic
 credentials and fake upstream APIs. No personal NAS deployment was modified.

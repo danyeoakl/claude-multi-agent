@@ -266,9 +266,12 @@ def patch_agent_source(source):
 
 
 def patch_agent_launch_source(source, effort_module):
+    # 2.1.299 adds timing between onProgress and enclosingToolUseId. Preserve
+    # it untouched; continue checking the native effort/model handoff below.
     handler = re.compile(rb'async function '+ IDENT + rb'\(\{agentInput:('+ IDENT +
                          rb'),toolUseContext:('+ IDENT + rb'),canUseTool:'+ IDENT +
                          rb',assistantMessage:'+ IDENT + rb',onProgress:'+ IDENT +
+                         rb'(?:,timing:'+ IDENT + rb')?' +
                          rb'(?:,enclosingToolUseId:'+ IDENT + rb')?\}\)\{')
     starts = list(handler.finditer(source))
     require(len(starts) == 1, 'Agent launch handler changed')

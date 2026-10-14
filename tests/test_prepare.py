@@ -174,7 +174,24 @@ class PatchTests(unittest.TestCase):
             prepare.patch_agent_source(NATIVE_AGENT_SOURCE.split(b'var relativeSchema')[0])
 
     def test_native_transport_persists_mapped_effort_for_foreground_and_background(self):
-        source, _ = prepare.patch_agent_launch_source(NATIVE_AGENT_HANDLER, '/effort.js')
+        self.check_native_transport(NATIVE_AGENT_HANDLER)
+
+    def test_native_299_timing_preserves_effort_transport(self):
+        timed = NATIVE_AGENT_HANDLER.replace(
+            b'onProgress:h,enclosingToolUseId:R',
+            b'onProgress:h,timing:S,enclosingToolUseId:R')
+        self.check_native_transport(timed)
+        source, _ = prepare.patch_agent_launch_source(timed, '/effort.js')
+        self.assertIn(b'onProgress:h,timing:S,enclosingToolUseId:R', source)
+        original, _ = fixture(agent_source=NATIVE_AGENT_SOURCE + timed)
+        output, _ = prepare.patch_binary(original)
+        self.assertIn(b'onProgress:h,timing:S,enclosingToolUseId:R', output)
+        with self.assertRaisesRegex(ValueError, 'Agent launch handler changed'):
+            prepare.patch_agent_launch_source(
+                timed.replace(b'timing:S', b'unknownTiming:S'), '/effort.js')
+
+    def check_native_transport(self, source_handler):
+        source, _ = prepare.patch_agent_launch_source(source_handler, '/effort.js')
         handler = source.replace(b'import{effort}from"/effort.js";', b'').decode()
         self.run_effort(handler + r'''
           const isolation=n=>({isRemoteLaunch:n.remote??false,shouldRunAsync:n.background??false});

@@ -115,6 +115,13 @@ test passed, as did 34 offline host checks and 15 pinned LiteLLM bridge checks.
 Background/persisted effort is covered by fixtures; real-provider inference,
 Remote Control and native resume were not newly live-tested for this upgrade.
 
+Verified again 2026-10-15 on native 2.1.299: its Agent handler adds a `timing`
+argument, which the patch preserves unchanged. Native model/effort transport and
+the existing structural checks remain intact. The 36-launch fake-API test,
+35 offline host checks and 15 pinned gateway checks passed. Fixtures cover both
+handler signatures, including foreground/background effort persistence and
+rejection of unknown parameters. No live provider/RC/resume test was performed.
+
 No launcher creates namespaces/no-new-privileges flags. SSH inherits the
 terminal's SSH_AUTH_SOCK. Missing agent keys cause ordinary auth failures.
 Nobody-owned root files, read-only /mnt or sudo no-new-privileges errors imply
