@@ -133,7 +133,11 @@ the driver conversation/wait may not. Adopt with the same run root, name and
 brief: `list`, `status`, `transcript --since-last`, then `wait`. Tell the
 coordinator you adopted it. Never start a duplicate, repeat queued messages or
 recreate jobs merely because the old driver disappeared. The transcript cursor
-is shared; full `transcript` recovers history without advancing it.
+is shared; full `transcript` recovers history without advancing it. Verify that
+this run's launch command in `events.jsonl` names the intended real CLI executable:
+a test killed mid-suite can leave fake executable/run-root overrides in its tmux
+server environment, inherited by a coordinator restarted inside it. Tests must
+never use the default tmux server.
 
 Each private run contains `meta.json`, `events.jsonl`, `transcript.raw`,
 `transcript.cursor`, `supervisor.log` and, after the first post-submission idle,

@@ -50,6 +50,12 @@ supervisor does not sandbox a worker or grant permission to use one.
 - **No process-name polling:** `pgrep -f` can match its own wrapper's command line
   and deadlock a wait. Use recorded PID/start identity, owned process state and
   the supervisor's existing wait command instead of inventing another watcher.
+- **Crash-safe test isolation:** a suite killed before cleanup can leave its tmux
+  server alive with fake executable overrides, a temporary run root and a test
+  socket directory in its environment. A coordinator restarted inside that server
+  inherits those settings and can silently launch a stub. Tests must never use the
+  default tmux server. Drivers should check `events.jsonl` launch commands against
+  the intended real CLI executable before trusting a newly adopted or started run.
 - **Interrupt and queue behavior:** observed Grok turns ignore Escape; Ctrl+C is
   the interrupt key. Queued messages can flush one per Enter, so inspect the
   queue and deliver additional Enter keys deliberately rather than duplicating
