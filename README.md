@@ -3,7 +3,7 @@
 # Hybrid Agents for Claude
 
 A Claude-first plugin and utility package for using Claude Code as a coordinator
-of Claude, Codex, DeepSeek and optional MiMo workers. Includes client patches,
+of Claude, Codex, DeepSeek and optional MiMo and Grok workers. Includes client patches,
 a separate localhost Docker LiteLLM gateway, multi-account launchers, direct
 Codex recovery, skills and an operations runbook.
 
@@ -142,10 +142,14 @@ stay built in, while the gateway lists only these configured extras:
 | `claude/chatgpt/gpt-6-astra-backup` | Codex subscription 2 |
 | `claude/deepseek/deepseek-flash` | Optional official API |
 | `claude/xiaomi/mimo-v2.6-pro` | Optional OpenRouter API |
+| `claude/xai/grok-4.7` | Optional Grok subscription |
+| `claude/xai/grok-4.7-build-fast` | Optional Grok subscription |
+| `claude/xai/grok-4.6` | Optional Grok subscription |
+| `claude/xai/grok-4.5` | Optional Grok subscription |
 
 Sol/Astra allow low/medium/high/xhigh/max; DeepSeek low/high/max (the client maps
 medium→high and xhigh→max); MiMo default
-only. No forced gateway effort. See the [model guide](skills/agent-orchestration/references/models.md).
+only; Grok low/medium/high/xhigh (grok-4.5 up to high). No forced gateway effort. See the [model guide](skills/agent-orchestration/references/models.md).
 Codex advertises 272k input/128k output, though unfamiliar IDs can still use
 Claude's conservative internal context budget.
 
@@ -171,7 +175,36 @@ non-native search; native Claude retains its path. Without EXA, don't assume
 non-native workers support Claude's server-side WebSearch. Provider permissions
 must allow the model. Disable with `cma provider NAME --disable` then cma up.
 
-### 6. Explicit live verification
+### 6. Optional Grok worker
+
+Opt-in per installation. A separate `grok1` worker signs in to the owner's Grok
+subscription with LiteLLM's xAI OAuth and sends inference to the Grok CLI's
+endpoint (`cli-chat-proxy.grok.com`), behind the same Anthropic-to-Responses bridge
+as Codex:
+
+```bash
+cma enable-grok
+cma login-grok          # owner: open the printed URL within 3 minutes, approve
+cma up
+cma smoke --model claude/xai/grok-4.7 --effort xhigh --allow-spend
+```
+
+LiteLLM's xAI login is PKCE with its callback on `127.0.0.1:56121` inside the
+process, so `login-grok` runs a one-off container with host networking; open the
+URL in a browser on the same machine (WSL forwards that loopback port). Or store an
+existing LiteLLM xAI `auth.json` with `cma import-grok-token PATH`, then stop using
+the source: refresh tokens rotate, so the worker must be the only refresher.
+
+Efforts are low/medium/high/xhigh (grok-4.5: low/medium/high); there is no max and
+the gateway clamps higher requests. 256k input/64k output. The proxy answers HTTP
+426 to an outdated client version: `cma enable-grok --client-version X.Y.Z`, then
+`cma up`. `gateway/grok_compat.py` sends `store:false`, drops the `user` field
+(Claude account/device ids), gives each Claude Code subagent its own prompt-cache
+key, and keeps a malformed final stream event from truncating the reply. Imitating
+the Grok CLI client is unsupported; xAI may change or restrict it. Usage draws on
+the subscription's Grok credits.
+
+### 7. Explicit live verification
 
 ```bash
 cma smoke --model claude/chatgpt/gpt-6.1-sol --effort high --allow-spend

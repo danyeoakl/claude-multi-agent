@@ -14,7 +14,9 @@
   "other_models": [
     "claude/chatgpt/gpt-6.1-sol", "claude/chatgpt/gpt-6-astra",
     "claude/chatgpt/gpt-6.1-sol-backup", "claude/chatgpt/gpt-6-astra-backup",
-    "claude/deepseek/deepseek-flash", "claude/xiaomi/mimo-v2.6-pro"
+    "claude/deepseek/deepseek-flash", "claude/xiaomi/mimo-v2.6-pro",
+    "claude/xai/grok-4.7", "claude/xai/grok-4.7-build-fast",
+    "claude/xai/grok-4.6", "claude/xai/grok-4.5"
   ],
   "other_model_metadata": {
     "claude/deepseek/deepseek-flash": {

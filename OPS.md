@@ -12,9 +12,13 @@ export its absolute CMA_HOME before every command. Never reuse deployment state.
 | Reconcile only virtual key | `cma sync-key` |
 | Regenerate config without starting | `cma render` |
 | Isolated client preparation | `cma prepare-client` |
-| DB/config/keys/Codex OAuth backup | `cma backup` |
+| DB/config/keys/Codex and Grok OAuth backup | `cma backup` |
 | Current native model catalog | `cma refresh-native --account primary`, then `cma up` |
 | Explicit live tool-loop test | `cma smoke --model MODEL --allow-spend` |
+| Opt in to the Grok worker | `cma enable-grok`, then `cma up` |
+| Grok subscription login (owner) | `cma login-grok`, then `cma up` |
+| Store an existing LiteLLM xAI login | `cma import-grok-token PATH`, then `cma up` |
+| Grok client version header | `cma enable-grok --client-version X.Y.Z`, then `cma up` |
 | Local diagnostics | `scripts/diagnose-agent-env.sh` |
 
 For scoped Compose logs/advanced operations:
@@ -44,6 +48,13 @@ provider errors. Never publish .env, key JSON, OAuth volumes or backup/dump file
    Fallback invocations select the official OpenAI provider and ChatGPT login
    method explicitly, so a configured gateway/API-key default cannot silently
    turn the fallback into the broken proxy or paid API path.
+
+Gateway Grok (opt-in, `cma enable-grok`) is a fourth: `cma login-grok` runs
+LiteLLM's xAI browser login in a one-off host-network container on the grok1-auth
+volume. It always starts a fresh login, so the worker stays the only process that
+refreshes the rotating token; never copy that login to another tool. A restored
+or imported older login may already be rotated out; login-grok again if the
+worker reports authentication errors.
 
 Device login needs the owner. Valid worker tokens refresh normally, so
 login-chatgpt can reuse an existing login; it isn't an account-replacement
@@ -224,7 +235,8 @@ instance. Stop usage, back up current state, and record project/image/port.
    an empty store can trigger an eager device login. With the scoped Compose
    command, use a one-off container for only the selected volume:
    `run --rm --no-deps -T --entrypoint tar chatgptN -xzf - -C
-   /app/chatgpt-auth < /exact/trusted/backup/chatgptN-auth.tar.gz`.
+   /app/chatgpt-auth < /exact/trusted/backup/chatgptN-auth.tar.gz`
+   (Grok: service grok1, `/app/xai-auth`, grok1-auth.tar.gz).
 4. cma up, cma check, then authorized smoke tests. Provider refresh-token
    invalidation can still require reauthorization.
 
@@ -247,6 +259,9 @@ test volumes it created and never performs production restore.
 | SSH publickey error | SSH agent/socket, not model selection |
 | Resume claims only Claude models | Fresh enhanced launcher; old conversation claims may be stale |
 | Port collision | Pick another free port; don't stop an unknown service |
+| Grok HTTP 426 | Proxy wants a newer client version: `cma enable-grok --client-version X.Y.Z`, `cma up` |
+| Grok auth error | Worker login missing/revoked: `cma login-grok`, `cma up`; one refresher only |
+| Grok 403 | Subscription credits/entitlement or a content refusal; not retried by the gateway |
 
 Arbitrary model additions need aligned profile, routes, metadata, finite schema,
 effort validation and tests. The patch intentionally accepts only reviewed IDs.

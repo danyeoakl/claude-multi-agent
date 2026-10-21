@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the hybrid router watchdog every 15 s
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

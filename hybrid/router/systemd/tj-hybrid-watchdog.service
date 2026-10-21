@@ -1,0 +1,10 @@
+# A template: install.sh fills in the at-sign placeholders and copies it to ~/.config/systemd/user.
+[Unit]
+Description=Hybrid router watchdog: takes the proxy settings out while the router is down
+Documentation=file://@DIR@/README.md
+
+[Service]
+Type=oneshot
+ExecStart="@PYTHON@" "@DIR@/watchdog.py" check --settings "@SETTINGS@" --port @PORT@ --ca-dir "@CA_DIR@"
+# Quiet every 15 s: only the watchdog's own notices and errors reach the journal.
+LogLevelMax=notice

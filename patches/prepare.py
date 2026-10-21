@@ -37,7 +37,7 @@ NATIVE_AGENT_EFFORT = re.compile(
     rb',\.\.\.' + IDENT + rb'\])\)\.optional\(\)\.describe\('
     rb'(?=["\']Reasoning effort for this agent\.)'
 )
-# Intentionally explicit: these are the six reviewed ClaudeHybrid agent routes.
+# Intentionally explicit: these are the reviewed ClaudeHybrid agent routes.
 # Keep aligned with litellm/claude-hybrid.json when changing this key's models.
 SUBAGENT_MODELS = (
     'claude/chatgpt/gpt-6.1-sol',
@@ -46,6 +46,10 @@ SUBAGENT_MODELS = (
     'claude/chatgpt/gpt-6-astra-backup',
     'claude/deepseek/deepseek-flash',
     'claude/xiaomi/mimo-v2.6-pro',
+    'claude/xai/grok-4.7',
+    'claude/xai/grok-4.7-build-fast',
+    'claude/xai/grok-4.6',
+    'claude/xai/grok-4.5',
 )
 HYBRID_ENABLED = ('process.env.CLAUDE_HYBRID_SUBAGENT_PATCH==="1"&&'
                   'process.env.ANTHROPIC_BASE_URL===' + json.dumps(GATEWAY))
@@ -64,15 +68,25 @@ EFFORT_LADDER = re.compile(
     rb')\.filter\(\((' + IDENT + rb')\)=>(' + IDENT + rb')\(\4,\2\)\)\}'
 )
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
-MODEL_EFFORTS = {model: (('low', 'high', 'max') if '/deepseek/' in model else
-                       () if '/xiaomi/' in model else EFFORTS)
-                 for model in SUBAGENT_MODELS}
+
+
+def model_efforts(model):
+    # Grok has no max; grok-4.5 also has no xhigh (xAI reasoning docs, live P1/P2).
+    if '/deepseek/' in model: return ('low', 'high', 'max')
+    if '/xiaomi/' in model: return ()
+    if model.endswith('/grok-4.5'): return EFFORTS[:3]
+    if '/xai/' in model: return EFFORTS[:4]
+    return EFFORTS
+
+
+MODEL_EFFORTS = {model: model_efforts(model) for model in SUBAGENT_MODELS}
 EFFORT_DESCRIPTION = (
     'Per-launch reasoning effort. Omit, null or "default" preserves normal '
     'agent/session defaults (not a forced provider reset). Sol 6.1 and Astra, '
     'including backup: low/medium/high/xhigh/max. DeepSeek Flash: low/high/max '
     '(medium maps to high; xhigh maps to max, not distinct levels). MiMo: default/null '
-    'only; graded effort is not supported. Native Claude uses installed client '
+    'only; graded effort is not supported. Grok 4.7, 4.7 build-fast and 4.6: '
+    'low/medium/high/xhigh; Grok 4.5: low/medium/high. Native Claude uses installed client '
     'capabilities: current Opus/Sonnet/Fable support all five; Haiku 4.5 default '
     'only. Invalid or policy/environment-overridden choices are rejected, not '
     'silently downgraded. Explicit effort is for foreground/background standalone '
@@ -96,8 +110,7 @@ def configure(gateway, models):
             'Patch catalog must be a nonempty subset of the reviewed model roster')
     GATEWAY = gateway.rstrip('/')
     SUBAGENT_MODELS = tuple(models)
-    MODEL_EFFORTS = {model: (('low', 'high', 'max') if '/deepseek/' in model else
-                           () if '/xiaomi/' in model else EFFORTS) for model in models}
+    MODEL_EFFORTS = {model: model_efforts(model) for model in models}
     HYBRID_ENABLED = ('process.env.CLAUDE_HYBRID_SUBAGENT_PATCH==="1"&&'
                       'process.env.ANTHROPIC_BASE_URL===' + json.dumps(GATEWAY))
 

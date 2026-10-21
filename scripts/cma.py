@@ -17,6 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PROFILE = json.loads((ROOT / 'profiles/models.json').read_text())
 IMAGE = 'docker.litellm.ai/berriai/litellm:1.104.0'
 LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
+# Grok subscription route: xAI OAuth against the Grok CLI's inference proxy. The proxy
+# answers 426 without a current client version; override with enable-grok --client-version.
+GROK_API_BASE = 'https://cli-chat-proxy.grok.com/v1'
+GROK_CLIENT_VERSION = '1.0.46'
 
 
 def state_dir():
@@ -103,11 +107,24 @@ def subscription_info(ident):
         'cache_read_input_token_cost': 0, 'cache_creation_input_token_cost': 0}
 
 
-def enabled_models(accounts, values):
+def grok_info(ident, model):
+    # Grok has no max effort; grok-4.5 also lacks xhigh. LiteLLM clamps to these levels.
+    levels = LEVELS[:3] if model == 'grok-4.5' else LEVELS[:4]
+    return {'id': ident, 'mode': 'responses', 'supports_vision': True,
+        'supports_reasoning': True, 'supports_function_calling': True,
+        'reasoning_effort_levels': levels, 'supports_none_reasoning_effort': False,
+        'supports_minimal_reasoning_effort': False, 'supports_xhigh_reasoning_effort': 'xhigh' in levels,
+        'supports_max_reasoning_effort': False, 'max_input_tokens': 256000,
+        'max_output_tokens': 64000, 'input_cost_per_token': 0, 'output_cost_per_token': 0,
+        'cache_read_input_token_cost': 0, 'cache_creation_input_token_cost': 0}
+
+
+def enabled_models(accounts, values, grok=False):
     return [model for model in PROFILE['other_models']
         if (not model.endswith('-backup') or accounts == 2)
         and ('/deepseek/' not in model or values.get('DEEPSEEK_API_KEY'))
-        and ('/xiaomi/' not in model or values.get('OPENROUTER_API_KEY'))]
+        and ('/xiaomi/' not in model or values.get('OPENROUTER_API_KEY'))
+        and ('/xai/' not in model or grok)]
 
 
 def worker_routes(worker):
@@ -118,10 +135,24 @@ def worker_routes(worker):
         for model in ('gpt-6.1-sol', 'gpt-6-astra')]
 
 
+def grok_routes(models, version):
+    # Only the version header is required by the proxy; the other two match the Grok CLI.
+    return [{'model_name': model, 'litellm_params': {
+        'model': 'xai/' + model, 'use_xai_oauth': True, 'timeout': 900, 'num_retries': 0,
+        'allowed_openai_params': ['reasoning_effort'], 'input_cost_per_token': 0,
+        'output_cost_per_token': 0, 'extra_headers': {'X-XAI-Token-Auth': 'xai-grok-cli',
+            'x-grok-model-override': model, 'x-grok-client-version': version}},
+        'model_info': grok_info('grok1-' + model, model)} for model in models]
+
+
+def workers(cfg):
+    return ['chatgpt' + str(n) for n in range(1, cfg['accounts'] + 1)] + (['grok1'] if cfg.get('grok') else [])
+
+
 def render():
     home, cfg = state_dir(), config()
     values = env_secrets()
-    cfg['models'] = enabled_models(cfg['accounts'], values)
+    cfg['models'] = enabled_models(cfg['accounts'], values, cfg.get('grok', False))
     write_private(home / 'config.json', cfg)
     native = [{'model_name': 'claude/anthropic/' + model,
         'litellm_params': {'model': 'anthropic/' + model, 'timeout': 900, 'num_retries': 0,
@@ -138,6 +169,13 @@ def render():
                 'timeout': 900, 'num_retries': 0, 'allowed_openai_params': ['reasoning_effort'],
                 'input_cost_per_token': 0, 'output_cost_per_token': 0},
                 'model_info': subscription_info('proxy-' + worker + '-' + model)})
+        elif '/xai/' in name:
+            model = name.rsplit('/', 1)[-1]
+            routes.append({'model_name': name, 'litellm_params': {'model': 'openai/' + model,
+                'api_base': 'http://grok1:4000/v1', 'api_key': 'os.environ/CMA_WORKER_KEY',
+                'timeout': 900, 'num_retries': 0, 'allowed_openai_params': ['reasoning_effort'],
+                'input_cost_per_token': 0, 'output_cost_per_token': 0},
+                'model_info': grok_info('proxy-grok1-' + model, model)})
         elif '/deepseek/' in name:
             routes.append({'model_name': name, 'litellm_params': {'model': 'deepseek/deepseek-flash',
                 'api_key': 'os.environ/DEEPSEEK_API_KEY', 'num_retries': 0, 'timeout': 900},
@@ -149,6 +187,8 @@ def render():
                 'api_key': 'os.environ/OPENROUTER_API_KEY', 'num_retries': 0, 'timeout': 900},
                 'model_info': {'supports_vision': True, 'supports_function_calling': True}})
     callbacks = ['subscription_messages.callback', 'hybrid_catalog.callback', 'deepseek_compat.callback']
+    if cfg.get('grok'):
+        callbacks.append('grok_compat.callback')  # per-subagent cache key on claude/xai/* only
     settings = {'callbacks': callbacks, 'model_group_settings': {
         'forward_client_headers_to_llm_api': ['claude/anthropic/*']}}
     proxy = {'model_list': routes, 'litellm_settings': settings,
@@ -193,6 +233,24 @@ def render():
             volumes=[str(home / (worker + '.yaml')) + ':/app/worker.yaml:ro', mounts[0],
                      worker + '-auth:/app/chatgpt-auth'])
         deps[worker] = {'condition': 'service_healthy'}
+    if cfg.get('grok'):
+        # One process owns the xAI login: its refresh token rotates and LiteLLM's
+        # refresh lock is per process. Routes stay empty until a login is stored.
+        grok_mount = str(ROOT / 'gateway/grok_compat.py') + ':/app/grok_compat.py:ro'
+        mounts.append(grok_mount)
+        models = [name.rsplit('/', 1)[-1] for name in cfg['models'] if '/xai/' in name]
+        write_private(home / 'grok1.yaml', {'model_list': grok_routes(models,
+            cfg.get('grok_client_version', GROK_CLIENT_VERSION))
+            if 'grok1' in cfg.get('authorized_workers', []) else [],
+            'general_settings': {'master_key': 'os.environ/LITELLM_MASTER_KEY'},
+            'litellm_settings': {'callbacks': ['grok_compat.callback']}})
+        services['grok1'] = dict(shared, command=[
+            'umask 077; exec /app/docker/prod_entrypoint.sh --config /app/worker.yaml --port 4000'],
+            environment={'LITELLM_MASTER_KEY': '${CMA_WORKER_KEY}', 'XAI_OAUTH_TOKEN_DIR': '/app/xai-auth',
+                         'XAI_OAUTH_API_BASE': GROK_API_BASE, 'LITELLM_LOCAL_MODEL_COST_MAP': 'True',
+                         'LITELLM_DISABLE_NO_REDIS_WARNING': 'true', 'LITELLM_MODE': 'PRODUCTION'},
+            volumes=[str(home / 'grok1.yaml') + ':/app/worker.yaml:ro', grok_mount, 'grok1-auth:/app/xai-auth'])
+        deps['grok1'] = {'condition': 'service_healthy'}
     services['proxy'] = dict(shared, command=[
         'umask 077; exec /app/docker/prod_entrypoint.sh --config /app/proxy.yaml --port 4000'],
         environment={'LITELLM_MASTER_KEY': '${LITELLM_MASTER_KEY}', 'LITELLM_SALT_KEY': '${LITELLM_SALT_KEY}',
@@ -203,7 +261,7 @@ def render():
             'EXA_API_KEY': '${EXA_API_KEY:-}'},
         volumes=[str(home / 'proxy.yaml') + ':/app/proxy.yaml:ro', *mounts],
         ports=['127.0.0.1:' + str(cfg['port']) + ':4000'], depends_on=deps)
-    volumes = {'database': {}} | {'chatgpt' + str(n) + '-auth': {} for n in range(1, cfg['accounts'] + 1)}
+    volumes = {'database': {}} | {name + '-auth': {} for name in workers(cfg)}
     write_private(home / 'compose.json', {'services': services, 'volumes': volumes})
 
 
@@ -284,6 +342,11 @@ def check():
         print('Codex subscription', number, ':', result.stdout.strip())
         if 'chatgpt' + str(number) not in cfg.get('authorized_workers', []):
             print('  Routes inactive until explicit login-chatgpt succeeds, then run up.')
+    if cfg.get('grok'):
+        code = "from pathlib import Path; p=Path('/app/xai-auth/auth.json'); print('present' if p.is_file() and p.stat().st_size else 'login required')"
+        print('Grok worker:', compose('exec', '-T', 'grok1', 'python', '-c', code, capture=True).stdout.strip())
+        if 'grok1' not in cfg.get('authorized_workers', []):
+            print('  Routes inactive until login-grok or import-grok-token succeeds, then run up.')
     print('No inference requests made; OAuth file presence is not proof that tokens remain valid.')
 
 
@@ -361,16 +424,16 @@ def backup():
             str(state_dir() / '.env'), '-f', str(state_dir() / 'compose.json'), 'exec', '-T',
             'db', 'pg_dump', '-U', 'litellm', '-d', 'litellm', '-Fc'], stdout=output, check=True,
             env=compose_environment())
-    for name in ('.env', 'config.json', 'compose.json', 'proxy.yaml', 'chatgpt1.yaml', 'chatgpt2.yaml', 'gateway-key.json'):
+    for name in ('.env', 'config.json', 'compose.json', 'proxy.yaml', 'chatgpt1.yaml', 'chatgpt2.yaml', 'grok1.yaml', 'gateway-key.json'):
         source = state_dir() / name
         if source.is_file(): write_private(bundle / name, source.read_text())
-    for number in range(1, config()['accounts'] + 1):
-        archive = bundle / ('chatgpt' + str(number) + '-auth.tar.gz')
+    for worker in workers(cfg):
+        archive = bundle / (worker + '-auth.tar.gz')
         with archive.open('xb') as output:
             archive.chmod(0o600)
             subprocess.run(['docker', 'compose', '--project-name', cfg['project'], '--env-file',
                 str(state_dir() / '.env'), '-f', str(state_dir() / 'compose.json'), 'exec', '-T',
-                'chatgpt' + str(number), 'tar', '-czf', '-', '-C', '/app/chatgpt-auth', '.'],
+                worker, 'tar', '-czf', '-', '-C', '/app/xai-auth' if worker == 'grok1' else '/app/chatgpt-auth', '.'],
                 stdout=output, check=True, env=compose_environment())
     write_private(bundle / 'manifest.json', {'image': config()['image'], 'accounts': config()['accounts'],
                                             'project': config()['project'], 'created_utc': stamp})
@@ -387,11 +450,34 @@ def native_token(account):
     return json.loads(path.read_text())['claudeAiOauth']['accessToken']
 
 
+def authorize(worker):
+    cfg = config(); cfg['authorized_workers'] = list(dict.fromkeys([*cfg.get('authorized_workers', []), worker]))
+    write_private(state_dir() / 'config.json', cfg); render()
+
+
+def grok_container(*options):
+    """docker run argv for a one-off on this project's grok1-auth volume.
+
+    Not compose run: the xAI login's PKCE callback listens on loopback inside the
+    process, which only host networking makes reachable from the owner's browser.
+    """
+    cfg = config()
+    if not cfg.get('grok'):
+        raise ValueError('Grok worker not enabled; run enable-grok first')
+    volume = cfg['project'] + '_grok1-auth'
+    # Compose's own labels, so a later up adopts the volume instead of warning.
+    subprocess.run(['docker', 'volume', 'create', '--label', 'com.docker.compose.project=' + cfg['project'],
+        '--label', 'com.docker.compose.volume=grok1-auth', volume], check=True,
+        stdout=subprocess.DEVNULL, env=compose_environment())
+    return ['docker', 'run', '--rm', '--init', *options, '-v', volume + ':/app/xai-auth',
+            '-e', 'XAI_OAUTH_TOKEN_DIR=/app/xai-auth', '-e', 'LITELLM_LOCAL_MODEL_COST_MAP=True',
+            '--entrypoint', 'python', cfg['image'], '-c']
+
+
 def start_stack():
     """Refresh bind-mounted configs without unnecessarily recreating the DB."""
     compose('up', '-d', '--wait', '--wait-timeout', '300', 'db')
-    workers = ['chatgpt' + str(n) for n in range(1, config()['accounts'] + 1)]
-    compose('up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '300', *workers)
+    compose('up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '300', *workers(config()))
     compose('up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '300', 'proxy')
 
 
@@ -423,6 +509,9 @@ def main():
     p = sub.add_parser('provider'); p.add_argument('name', choices=('deepseek', 'openrouter', 'exa'))
     p.add_argument('--disable', action='store_true')
     p = sub.add_parser('login-chatgpt'); p.add_argument('account', choices=('primary', 'backup'))
+    p = sub.add_parser('enable-grok'); p.add_argument('--client-version')
+    sub.add_parser('login-grok')
+    p = sub.add_parser('import-grok-token'); p.add_argument('path', type=Path)
     p = sub.add_parser('login-claude'); p.add_argument('account', choices=('primary', 'backup'))
     p = sub.add_parser('login-codex'); p.add_argument('account', choices=('primary', 'backup'))
     p = sub.add_parser('codex'); p.add_argument('--account', choices=('primary', 'backup'), default='primary')
@@ -478,9 +567,39 @@ def main():
         compose('run', '--rm', '--no-deps', '--entrypoint', 'python', worker, '-c',
             'import os; from litellm.llms.chatgpt.authenticator import Authenticator; '
             'Authenticator().get_access_token(); os.chmod("/app/chatgpt-auth/auth.json", 0o600)')
-        cfg = config(); cfg['authorized_workers'] = list(dict.fromkeys([*cfg.get('authorized_workers', []), worker]))
-        write_private(state_dir() / 'config.json', cfg); render()
+        authorize(worker)
         print('Account authorized; run up to activate its worker routes.')
+    elif args.command == 'enable-grok':
+        cfg = config(); cfg['grok'] = True
+        cfg['grok_client_version'] = args.client_version or cfg.get('grok_client_version', GROK_CLIENT_VERSION)
+        write_private(state_dir() / 'config.json', cfg); render()
+        print('Grok worker enabled. Owner: login-grok (or import-grok-token PATH), then run up.')
+    elif args.command == 'login-grok':
+        command = grok_container('--network', 'host', '-e', 'BROWSER=echo', '-e', 'PYTHONUNBUFFERED=1')
+        print('User action required: open the printed xAI URL in a browser on this machine within 3 minutes '
+              'and approve the Grok account. Do not log or share the URL.', flush=True)
+        # force: a fresh login never refreshes here, so the worker stays the only refresher.
+        subprocess.run(command + ['import os; from litellm.llms.xai.oauth import XAIOAuthAuthenticator as A; '
+            'A().login(force=True, no_browser=True); os.chmod("/app/xai-auth/auth.json", 0o600)'],
+            check=True, env=compose_environment())
+        authorize('grok1')
+        print('Grok account authorized; run up to activate its worker routes.')
+    elif args.command == 'import-grok-token':
+        data = args.path.read_bytes()
+        try: record = json.loads(data)
+        except ValueError: record = None
+        if not isinstance(record, dict) or not all(record.get(name) for name in
+                ('access_token', 'refresh_token', 'token_endpoint', 'expires_at')):
+            raise ValueError('Not a LiteLLM xAI OAuth auth.json; nothing imported')
+        subprocess.run(grok_container('-i', '--network', 'none') + [
+            'import os, sys\npath = "/app/xai-auth/auth.json"; temporary = path + ".importing"\n'
+            'os.chmod("/app/xai-auth", 0o700)\n'
+            'with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as stream:\n'
+            '    stream.write(sys.stdin.buffer.read())\n'
+            'os.chmod(temporary, 0o600); os.replace(temporary, path)'], input=data, check=True, env=compose_environment())
+        authorize('grok1')
+        print('Grok login imported; run up to activate its worker routes. Stop using the source file:',
+              'refresh tokens rotate, so only the grok1 worker may refresh this login.')
     elif args.command == 'login-claude':
         env = clean_client_env()
         for name in ('ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS'): env.pop(name, None)
@@ -524,7 +643,7 @@ def main():
         write_private(state_dir() / 'config.pre-upgrade.json', config())
         write_private(state_dir() / 'config.json', cfg); render()
         try:
-            compose('pull', 'proxy', *['chatgpt' + str(n) for n in range(1, cfg['accounts'] + 1)])
+            compose('pull', 'proxy', *workers(cfg))
             start_stack(); sync_key(); check()
         except Exception:
             cfg['image'] = old; write_private(state_dir() / 'config.json', cfg); render()

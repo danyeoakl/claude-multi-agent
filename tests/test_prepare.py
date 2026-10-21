@@ -209,6 +209,7 @@ class PatchTests(unittest.TestCase):
             for(const background of [false,true])for(const model of Object.keys(cmaEffortCatalog)){
               for(const value of ['low','medium','high','xhigh','max']){
                 if(model.includes('/xiaomi/')){await assert.rejects(run({model,effort:value,background}),/invalid/);continue;}
+                if(!model.includes('/deepseek/')&&!cmaEffortCatalog[model].includes(value)){await assert.rejects(run({model,effort:value,background}),/invalid/);continue;}
                 const mapped=model.includes('/deepseek/')?({medium:'high',xhigh:'max'})[value]??value:value;
                 const result=await run({model,effort:value,background});
                 assert.equal(result.agentDefinition.effort,mapped);assert.equal(result.wireEffort,mapped);

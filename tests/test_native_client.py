@@ -31,7 +31,8 @@ class NativeClientTests(unittest.TestCase):
         failures = []
         # All four subscriptions, all five levels, DeepSeek aliases, MiMo default.
         cases = [(model, level) for model in patcher.SUBAGENT_MODELS
-                 if "/xiaomi/" not in model for level in patcher.EFFORTS]
+                 if "/xiaomi/" not in model
+                 for level in (patcher.MODEL_EFFORTS[model] if "/xai/" in model else patcher.EFFORTS)]
         cases.append(("claude/xiaomi/mimo-v2.6-pro", "default"))
         cases.extend((model, level) for model in patcher.SUBAGENT_MODELS
                      if "/xiaomi/" not in model for level in ("lower", "higher"))

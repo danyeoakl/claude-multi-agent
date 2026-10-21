@@ -1,0 +1,19 @@
+# A template: install.sh fills in the at-sign placeholders and copies it to ~/.config/systemd/user.
+[Unit]
+Description=Hybrid router: Claude Code traffic to api.anthropic.com, gateway models to LiteLLM
+Documentation=file://@DIR@/README.md
+# Restart forever: the watchdog takes the proxy settings out while the router is down.
+StartLimitIntervalSec=0
+
+[Service]
+ExecStartPre="@DIR@/make-ca.sh" "@CA_DIR@"
+ExecStart="@NODE@" "@DIR@/router.mjs" --port @PORT@ --ca-dir "@CA_DIR@" --gateway @GATEWAY@ --key "@KEY_FILE@"
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+# The router talks to Anthropic and the gateway directly, never through a proxy.
+UnsetEnvironment=HTTPS_PROXY HTTP_PROXY ALL_PROXY https_proxy http_proxy all_proxy NODE_USE_ENV_PROXY NODE_OPTIONS
+
+[Install]
+WantedBy=default.target
