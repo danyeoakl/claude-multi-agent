@@ -154,8 +154,13 @@ Turn both off in the **user** settings of the machine that runs the sessions
 (`~/.claude/settings.json`; project settings may not set these keys):
 
 ```json
-{ "env": { "CLAUDE_CODE_TETHER_LIVE": "false", "CLAUDE_CODE_SLEEPY_SNOWFLAKE": "off" } }
+{ "env": { "CLAUDE_CODE_TETHER_LIVE": "false", "CLAUDE_CODE_SLEEPY_SNOWFLAKE": "off",
+           "CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1" } }
 ```
+
+`CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1` matters too: when a stream stalls, Claude Code
+retries the same request without streaming, and the ChatGPT backend only streams, so a Codex
+worker would fail on the retry instead of reporting the stalled stream.
 
 Requests then carry the full history, as they always do at a custom `ANTHROPIC_BASE_URL`
 (TJ's launcher setup), where Claude Code never uses threads. Restart sessions after the change.

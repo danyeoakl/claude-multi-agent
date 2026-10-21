@@ -36,6 +36,6 @@ Leave this README out of the copy. The coordinator then calls `Agent(subagent_ty
 
 The body of each file is a short worker contract, adapted from `skills/codex-fallback/references/worker-preamble.md`.
 
-**Also required:** `CLAUDE_CODE_TETHER_LIVE=false` and `CLAUDE_CODE_SLEEPY_SNOWFLAKE=off` in the user
-settings' `env`, or gateway subagents lose their history after the first turn. See
+**Also required:** `CLAUDE_CODE_TETHER_LIVE=false`, `CLAUDE_CODE_SLEEPY_SNOWFLAKE=off` and
+`CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1` in the user settings' `env`, or gateway subagents lose their history after the first turn. See
 `hybrid/router/README.md`, "Required Claude Code settings".

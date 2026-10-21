@@ -87,6 +87,6 @@ The tests in `tests/route.test.ts` run the hooks against the engine's own test k
 - pass-through for Claude models;
 - the resume rewrite, with the bounded store.
 
-**Also required:** `CLAUDE_CODE_TETHER_LIVE=false` and `CLAUDE_CODE_SLEEPY_SNOWFLAKE=off` in the user
-settings' `env`, or gateway subagents lose their history after the first turn. See
+**Also required:** `CLAUDE_CODE_TETHER_LIVE=false`, `CLAUDE_CODE_SLEEPY_SNOWFLAKE=off` and
+`CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1` in the user settings' `env`, or gateway subagents lose their history after the first turn. See
 `hybrid/router/README.md`, "Required Claude Code settings".
