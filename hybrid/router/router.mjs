@@ -109,6 +109,11 @@ const inner = http.createServer((req, res) => {
     let model
     try { model = JSON.parse(body.toString('utf8')).model } catch {}
     if (typeof model !== 'string' || !model.startsWith('claude/') || model.startsWith('claude/anthropic/')) return anthropic(body, model)
+    // Debugging only: TJ_HYBRID_ROUTER_DUMP=<private dir> keeps each gateway-bound request body
+    // (conversation content; credentials are in headers, never in the body)
+    if (process.env.TJ_HYBRID_ROUTER_DUMP) try {
+      fs.writeFileSync(`${process.env.TJ_HYBRID_ROUTER_DUMP}/${Date.now()}-${model.replace(/[^\w.-]/g, '_')}.json`, body, { mode: 0o600 })
+    } catch {}
     if (path.endsWith('/count_tokens')) { done(model, 'local', 200); return reply(res, 200, { input_tokens: Math.ceil(body.length / 4) }) }
     let key
     try { key = loadKey() } catch (e) { done(model, 'gateway', 502); return reply(res, 502, apiError(`hybrid gateway key unavailable: ${e.code}`)) }

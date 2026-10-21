@@ -139,3 +139,29 @@ systemctl --user restart tj-hybrid-router       # after updating router.mjs
 
 The router reloads a renewed leaf on its own. A renewed CA needs running sessions restarted, because Node
 reads `NODE_EXTRA_CA_CERTS` at start-up.
+
+## Required Claude Code settings: no message threads
+
+Behind this router the session stays first party, so Claude Code (2.1.30x) uses its
+server-side **message threads**: after a subagent's first request it sends
+`thread: {type: "continue", previous_message_id}` with only the newest messages and
+relies on api.anthropic.com to hold the rest of the conversation. LiteLLM has no threads,
+so a gateway worker then sees tool results without its task or its own tool calls
+(Codex: "No tool call found for function call output"; Grok: "what should I do next?").
+Claude Code also adds mid-conversation `system` reminders after the task.
+
+Turn both off in the **user** settings of the machine that runs the sessions
+(`~/.claude/settings.json`; project settings may not set these keys):
+
+```json
+{ "env": { "CLAUDE_CODE_TETHER_LIVE": "false", "CLAUDE_CODE_SLEEPY_SNOWFLAKE": "off" } }
+```
+
+Requests then carry the full history, as they always do at a custom `ANTHROPIC_BASE_URL`
+(TJ's launcher setup), where Claude Code never uses threads. Restart sessions after the change.
+
+## Debugging: dump gateway-bound requests
+
+`TJ_HYBRID_ROUTER_DUMP=<private dir>` in the router's environment (a systemd drop-in) writes
+each gateway-bound request body there (0600). Bodies hold conversation content but no
+credentials (those travel in headers). Turn it off and delete the files after debugging.
