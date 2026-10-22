@@ -4,7 +4,7 @@ Three Claude Code agent files that run a subagent on a gateway model. Each one c
 
 | Agent | Model | Effort | Tools |
 | --- | --- | --- | --- |
-| `codex` | `claude/chatgpt/gpt-6.1-sol` | xhigh | all (inherited) |
+| `codex` | `claude/chatgpt/gpt-6.1-sol` | max | all (inherited) |
 | `grok` | `claude/xai/grok-4.7` | xhigh | Read, Write, Edit, Glob, Grep, Bash, TodoWrite, SubagentHandback |
 | `grok-fast` | `claude/xai/grok-4.7-build-fast` | medium | same as `grok` |
 

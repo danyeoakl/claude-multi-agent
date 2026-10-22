@@ -1,6 +1,6 @@
 {
   "name": "hybrid-route",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Per-call gateway models for Agent calls (no binary patch): takes a gateway model off the Agent call and names it for the subagent, refuses effort the model lacks, and keeps resumed subagents on their model.",
   "author": {"name": "hybrid-agents fork"},
   "license": "MIT"

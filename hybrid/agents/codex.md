@@ -2,7 +2,7 @@
 name: codex
 description: Codex worker (GPT-6.1 Sol on the ChatGPT subscription, through the local gateway). Use for a bounded engineering task that benefits from an independent, non-Claude model - implementing a well-specified change, debugging, code review or a bug hunt - with a self-contained brief.
 model: claude/chatgpt/gpt-6.1-sol
-effort: xhigh
+effort: max
 ---
 
 # Worker contract

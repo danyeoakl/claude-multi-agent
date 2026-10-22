@@ -7,6 +7,8 @@ import type { EngineInterface, Register } from 'claude-code'
 //   The same effort check covers the named workers (codex, grok, grok-fast in hybrid/agents).
 //   A Grok model named without an effort gets its highest level (xhigh; grok-4.5: high),
 //   except grok-4.7-build-fast, the quick one, which gets medium like the grok-fast worker.
+//   A Codex model named without an effort gets max, its deepest reasoning (Codex's own "ultra"
+//   is xhigh plus sub-agent delegation, which Claude does here).
 // - agent.spawn: names the remembered model for that call's subagent; a fork, which ignores it, is refused.
 // - turn.step: a resumed subagent (SendMessage to a finished agent, or after a restart)
 //   stays on the gateway model and effort it first stepped with; kept across sessions in $.store.
@@ -74,8 +76,10 @@ export const register: Register = on => {
     if (refused) return refused
     wanted.set(e.tool_use_id, model)
     const { model: _, ...rest } = e
-    // Grok runs at its highest effort unless the call asks for another
-    const top = model.startsWith('claude/xai/') && effort === undefined ? QUICK.get(model) ?? MODELS.get(model)!.at(-1) : undefined
+    // Codex and Grok run at their default effort unless the call asks for another
+    const top = effort !== undefined ? undefined
+      : model.startsWith('claude/xai/') ? QUICK.get(model) ?? MODELS.get(model)!.at(-1)
+      : model.startsWith('claude/chatgpt/') ? 'max' : undefined
     return next(top ? { ...rest, effort: top } : rest)
   }).catch(($, e, next) => next(e)) // passes the call as it came; an off-enum model then fails the schema loudly
 

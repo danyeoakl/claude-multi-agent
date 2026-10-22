@@ -39,6 +39,17 @@ test('a gateway model leaves the Agent call and reaches the spawn', async ($, on
   expect(seen.spawn.model).toBe('claude/xai/grok-4.7')
 })
 
+test('a gateway model without an effort gets its default', async ($, on) => {
+  const seen = engine($, on)
+  for (const [model, effort] of [['claude/chatgpt/gpt-6-astra', 'max'], ['claude/xai/grok-4.7', 'xhigh'],
+                                 ['claude/xai/grok-4.5', 'high'], ['claude/xai/grok-4.7-build-fast', 'medium']]) {
+    await $.tool.call(agent({ model }))
+    expect(seen.call.effort).toBe(effort)
+  }
+  await $.tool.call(agent({ model: 'claude/chatgpt/gpt-6.1-sol', effort: 'low' }))
+  expect(seen.call.effort).toBe('low')
+})
+
 test("Claude's own models and calls without a model pass untouched", async ($, on) => {
   const seen = engine($, on)
   await $.tool.call(agent({ model: 'haiku' }))

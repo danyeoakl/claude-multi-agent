@@ -17,6 +17,7 @@ All three hooks are in `hooks/register.ts`:
   - When `model` is a gateway model, the mod takes it off the call and remembers it by the call's `tool_use_id`.
   - It refuses an unknown model, listing the gateway models and Claude's own.
   - It refuses an explicit `effort` the model does not support, naming that model's levels. Effort is never lowered silently.
+  - A call without `effort` gets the model's default: `max` for Codex, the highest level for Grok, and `medium` for `grok-4.7-build-fast`, the quick one.
   - Claude's own models, and calls without a model, pass through untouched.
 - **`agent.spawn`:** names the remembered model for that call's subagent. A fork always runs on its parent's model, so a gateway model on a fork is refused rather than run on Claude.
 - **`turn.step`:**
@@ -83,6 +84,7 @@ claude plugin test hybrid/mod
 
 The tests in `tests/route.test.ts` run the hooks against the engine's own test kit. They cover:
 - the per-call route;
+- the default effort;
 - the refusals;
 - pass-through for Claude models;
 - the resume rewrite, with the bounded store.
