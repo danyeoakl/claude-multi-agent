@@ -5,7 +5,8 @@ import type { EngineInterface, Register } from 'claude-code'
 //   check (its enum is sonnet/opus/haiku/fable) and remembered by tool_use_id. An unknown
 //   model, or an explicit effort the model lacks, is refused; effort is never lowered.
 //   The same effort check covers the named workers (codex, grok, grok-fast in hybrid/agents).
-//   A Grok model named without an effort gets its highest level (xhigh; grok-4.5: high).
+//   A Grok model named without an effort gets its highest level (xhigh; grok-4.5: high),
+//   except grok-4.7-build-fast, the quick one, which gets medium like the grok-fast worker.
 // - agent.spawn: names the remembered model for that call's subagent; a fork, which ignores it, is refused.
 // - turn.step: a resumed subagent (SendMessage to a finished agent, or after a restart)
 //   stays on the gateway model and effort it first stepped with; kept across sessions in $.store.
@@ -29,6 +30,7 @@ const WORKERS = new Map<string, string>([
   ['grok-fast', 'claude/xai/grok-4.7-build-fast'],
 ])
 const CLAUDE = new Set(['sonnet', 'opus', 'haiku', 'fable'])
+const QUICK = new Map<string, string>([['claude/xai/grok-4.7-build-fast', 'medium']]) // default effort, not the highest
 const KEEP = 500 // subagents remembered in $.store; the oldest go first
 
 type Kept = { model: string; effort?: string | number }
@@ -73,7 +75,7 @@ export const register: Register = on => {
     wanted.set(e.tool_use_id, model)
     const { model: _, ...rest } = e
     // Grok runs at its highest effort unless the call asks for another
-    const top = model.startsWith('claude/xai/') && effort === undefined ? MODELS.get(model)!.at(-1) : undefined
+    const top = model.startsWith('claude/xai/') && effort === undefined ? QUICK.get(model) ?? MODELS.get(model)!.at(-1) : undefined
     return next(top ? { ...rest, effort: top } : rest)
   }).catch(($, e, next) => next(e)) // passes the call as it came; an off-enum model then fails the schema loudly
 
