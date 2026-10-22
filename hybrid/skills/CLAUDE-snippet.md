@@ -1,0 +1,3 @@
+## Codex review and X research
+- When you finish a task that changed code for real (not docs, typos or config one-liners), start the codex-review skill once, before your final reply. Main conversation only: a subagent or workflow step never starts it on its own; the session that receives its result reviews the combined change. Fix only findings real use would hit, and never re-review the fixes.
+- When I ask who has built something, or to find other people's projects, code, people or posts, whether or not I mention X or Twitter (e.g. "who's built an MCP server for Airtable?"), use the x-research skill.
