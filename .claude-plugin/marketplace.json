@@ -11,6 +11,6 @@
     "name": "hybrid-route",
     "source": "./hybrid/mod",
     "description": "Per-call gateway models for Agent calls (no binary patch)",
-    "version": "0.1.0"
+    "version": "0.1.1"
   }]
 }

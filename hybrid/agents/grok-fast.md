@@ -2,7 +2,7 @@
 name: grok-fast
 description: Fast Grok worker (Grok 4.7 Build Fast at medium effort, through the local gateway). Use for quick, mechanical, well-specified work - searching a codebase and summarising what it finds, small edits, renames, simple scripts - where speed matters more than depth. It has no web tools.
 model: claude/xai/grok-4.7-build-fast
-effort: medium
+effort: xhigh
 tools: Read, Write, Edit, Glob, Grep, Bash, TodoWrite, SubagentHandback
 ---
 
