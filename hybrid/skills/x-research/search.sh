@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Ask the Grok CLI, headless and read-only, to find projects, code, people or posts on X with its server-side X search.
-# Usage: search.sh <slug> < ask.txt        (the user's ask on stdin)
+# Usage: search.sh [--raw] <slug> < ask.txt   (the user's ask on stdin; --raw sends it to Grok as written,
+# for any research brief, instead of wrapping it in the X-finding instructions)
 # Saves Grok's full answer to ~/x-research/<YYYY-MM-DD>-<slug>.md, then prints a status block and the answer.
 # Works in Git Bash (Windows), macOS and Linux. Needs python3 (python on Windows).
 set -o pipefail
+RAW=; [ "${1:-}" = --raw ] && { RAW=1; shift; }
 export PATH="$HOME/.local/bin:$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 ASK=$(cat)
 [ -n "$ASK" ] || { echo "status=failed reason=no ask on stdin"; exit 2; }
@@ -20,6 +22,7 @@ trap 'cd "$HOME" 2>/dev/null || cd /; rm -rf "${S:?}"' EXIT
 mkdir "$S/cwd" || exit 3
 GCWD="$S/cwd"; [ -n "$WIN" ] && GCWD=$(cygpath -w "$GCWD")
 printf '%s\n' "$ASK" > "$S/ask.txt"
+if [ -n "$RAW" ]; then cp "$S/ask.txt" "$S/brief.md"; else
 { printf 'Today is %s. Find on X (Twitter):\n\n%s\n\n' "$(date -u +%Y-%m-%d)" "$ASK"
   cat <<'EOF'
 How to search:
@@ -40,6 +43,7 @@ Return up to 6 finds, best first. For each find give:
 End with one line naming the search tools you used.
 EOF
 } > "$S/brief.md"
+fi
 
 # Remove every client tool; Grok's server-side X search and web search stay. Never use --tools here: an allowlist
 # also drops X search. web_fetch goes too, because a tool call that needs approval can cancel the whole headless turn.

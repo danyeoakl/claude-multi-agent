@@ -1,34 +1,33 @@
 ---
 name: codex-review
-description: Have Codex review a code change you just finished. It runs Codex's built-in reviewer (gpt-6.1-sol at max effort, read-only) in the background, and you then fix only the findings that real use would hit. Use in the main conversation after finishing any non-trivial code change, and on /codex-review. Subagents and workflow steps don't run it unless their task asks for it.
-argument-hint: "[--uncommitted | --base <branch> | --commit <sha>]"
+description: Run Codex's built-in code reviewer (gpt-6.1-sol at max effort, read-only) in the background on finished work, then fix only what real use would hit. Use when a big chunk of your own code work is done, such as a branch before its PR, and on /codex-review.
+argument-hint: "[--base <branch> | --uncommitted | --commit <sha>]"
 ---
 
 # Codex review
 
-Codex reviews; you triage and fix. Each review uses the user's ChatGPT plan quota, so run **one review per change** and never review your own fixes.
+Each review uses the user's ChatGPT plan quota: one per big chunk of work, never on your own fixes.
 
-## 1. Decide whether to run
+## 1. When to run
 
-- **Run** when you finish a real code change: new behaviour, a bug fix, or a refactor that touches logic. Run it once the task's change is done, not after each edit. Also run whenever the user types /codex-review.
-- **Skip** docs, comments, typos, formatting, renames, config or version one-liners, generated files and lockfiles, and anything outside a git repository.
-- **Skip** when you are a subagent or a workflow step: the session that receives your result reviews the combined change. Run there only when your task explicitly asks for a Codex review.
-- **Once per change.** Fixes from a review are not reviewed on their own. They ride along with the next change's review (leave them uncommitted with it, or cover both with `--base`). Never loop review, fix, review.
+- When a big chunk of your own code work is done (say, a branch before its PR), not after each change; and whenever the user types /codex-review.
+- In a subagent or workflow step, only when its brief asks.
+- Fixes from a review go in without another review.
 
 ## 2. Pick the target
 
-- Uncommitted work (staged, unstaged or untracked): `--uncommitted`. This is the default.
-- A commit you just made: `--commit <sha>`, optionally with `--title "<subject>"`.
-- Several commits on a branch: `--base <base branch>`.
+- A branch (the usual case): `--base <base branch>`, after committing; it doesn't see files that were never committed.
+- Uncommitted work: `--uncommitted`.
+- One commit: `--commit <sha>`, optionally with `--title "<subject>"`.
 
-Pass only a target flag, never a prompt: a prompt replaces the built-in reviewer. If /codex-review came with other text, ignore it and use `--uncommitted`.
+Pass only a target flag, never a prompt: a prompt replaces the built-in reviewer. If /codex-review came with other text, ignore it and pick the target as above.
 
 ## 3. Start it in the background
 
 Use the Bash tool with `run_in_background: true`, from inside the repo. On Windows this is Git Bash; the command is the same on every OS:
 
 ```bash
-bash ~/.claude/skills/codex-review/review.sh --uncommitted
+bash ~/.claude/skills/codex-review/review.sh --base main
 ```
 
 review.sh runs Codex's built-in reviewer (`codex exec review`) read-only on gpt-6.1-sol at max and saves the report in the repo's `.git/codex-reviews/`.

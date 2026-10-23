@@ -1,6 +1,6 @@
 ---
 name: x-research
-description: Find other people's projects, code, people or posts, mainly through X (Twitter), with the Grok CLI's built-in X search. It runs headless, read-only and in the background, and you reply with a short list whose links you have checked. Use whenever the user asks who has built something or to find projects, code, people or posts, even when they don't mention X, e.g. "who's built an MCP server for Airtable?", and on /x-research <query>.
+description: Find other people's projects, code, people or posts, mainly through X (Twitter), with the Grok CLI's built-in X search. It runs headless, read-only and in the background, and you reply with a short list whose links you have checked. Use whenever the user asks who has built something or to find projects, code, people or posts, even when they don't mention X, e.g. "who's built an MCP server for Airtable?", and on /x-research <query>. With --raw it also runs any research brief through Grok's web and X search.
 argument-hint: "<what to find>"
 ---
 
@@ -19,6 +19,8 @@ ASK
 ```
 
 Tell the user in one line that the search is running, and keep working. Don't poll: you are notified when it exits.
+
+For research that isn't finding projects or posts, pass `--raw` before the slug: Grok gets your brief exactly as written. Read the status block as below, then summarise Grok's answer instead of the list in step 4, with the report path.
 
 ## 2. Read the status block
 
