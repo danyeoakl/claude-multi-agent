@@ -16,7 +16,7 @@ bash hybrid/skills/install.sh --dry-run   # shows what it would do
 bash hybrid/skills/install.sh
 ```
 
-This copies both folders into `~/.claude/skills/`, replacing older copies of these two only. It also adds `CLAUDE-snippet.md` to `~/.claude/CLAUDE.md` between `<!-- hybrid-cli-helpers:start -->` and `<!-- hybrid-cli-helpers:end -->`. That block says when to use Codex and Grok, and sends X-finding asks to x-research. Re-run the installer after pulling to update both. New sessions pick the skills up.
+This copies both folders into `~/.claude/skills/`, replacing older copies of these two only. Re-run the installer after pulling to update both. New sessions pick the skills up.
 
 ## Optional: Codex that is not on PATH
 
@@ -39,7 +39,7 @@ Here `<prefix>` is that Node folder. The wrapper goes through `codex.js` rather 
 rm -rf ~/.claude/skills/codex-review ~/.claude/skills/x-research
 ```
 
-Then delete the lines from `<!-- hybrid-cli-helpers:start -->` to `<!-- hybrid-cli-helpers:end -->` in `~/.claude/CLAUDE.md`. Reports stay where they are: in each repo's `.git/codex-reviews/` and in `~/x-research/`.
+Reports stay where they are: in each repo's `.git/codex-reviews/` and in `~/x-research/`.
 
 ## Notes
 
