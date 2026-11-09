@@ -41,6 +41,7 @@ The output ends with `status=done findings=<n> report=<path>` or `status=failed 
 - **No `status=` line** (for example exit 127, script missing): say `Codex review unavailable: review.sh not installed at ~/.claude/skills/codex-review` and move on.
 - **Failed:** tell the user in one line, e.g. `Codex review unavailable: not logged in (log: <path>)`, and move on. The usual reasons are: codex not installed; not logged in (`codex login status` is the only check you may run; never run a login); usage limit reached; timed out (exit 124). Don't retry.
 - **Done:** read the report. It starts with a summary paragraph. Each finding is a bullet, `- [P1] <title> — <absolute path>:<start>-<end>`, followed by an indented paragraph. No bullets means no findings.
+- **Done, but it couldn't run something:** if the summary says its sandbox blocked a run (tests, a model check, a server), run that yourself on the rebased head and give the result in your report line. A review that couldn't run it doesn't count toward the merge gate.
 
 ## 5. Triage: does it happen in real life?
 
@@ -61,4 +62,4 @@ Codex review: <k> fixed, <d> dropped as unrealistic. Report: <report path>
 - Fixed <what was wrong> (<repo-relative path>:<start line>)
 ```
 
-Paths are repo-relative with the start line only, e.g. `(src/trials.py:36)`. With nothing dropped: `Codex review: <k> fixed. Report: <path>`. With no findings: `Codex review: no findings. Report: <path>`. With nothing kept: `Codex review: nothing to fix (<d> dropped as unrealistic). Report: <path>`. Never list the dropped findings; the count is enough, and the user can open the report.
+Paths are repo-relative with the start line only, e.g. `(src/trials.py:36)`. With nothing dropped: `Codex review: <k> fixed. Report: <path>`. With no findings: `Codex review: no findings. Report: <path>`. With nothing kept: `Codex review: nothing to fix (<d> dropped as unrealistic). Report: <path>`. Never list the dropped findings; the count is enough, and the user can open the report. When the review couldn't run something, add it after the report path: `Codex couldn't run <what>; I ran it: <result>.`
